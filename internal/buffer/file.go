@@ -1,4 +1,4 @@
-package editor
+package buffer
 
 import (
 	"errors"
@@ -9,7 +9,7 @@ import (
 	"unicode/utf8"
 )
 
-func filePath(path string) (string, error) {
+func ResolvePath(path string) (string, error) {
 	absolute, err := filepath.Abs(path)
 
 	if err != nil {
@@ -35,7 +35,13 @@ func filePath(path string) (string, error) {
 	return resolved, nil
 }
 
-func open(path string) (*buffer, error) {
+func Open(path string) (*Buffer, error) {
+	path, err := ResolvePath(path)
+
+	if err != nil {
+		return nil, err
+	}
+
 	data, err := os.ReadFile(path)
 
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
@@ -54,14 +60,14 @@ func open(path string) (*buffer, error) {
 		}
 	}
 
-	return &buffer{
+	return &Buffer{
 		path:  path,
 		text:  []rune(string(data)),
 		saved: string(data),
 	}, nil
 }
 
-func (m *buffer) save() error {
+func (m *Buffer) Save() error {
 	path, err := filepath.EvalSymlinks(m.path)
 
 	if errors.Is(err, os.ErrNotExist) {

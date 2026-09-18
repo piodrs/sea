@@ -1,7 +1,7 @@
 package editor
 
 import (
-	"strings"
+	"github.com/piodrs/sea/internal/buffer"
 
 	"github.com/charmbracelet/bubbles/viewport"
 )
@@ -14,7 +14,7 @@ const (
 )
 
 type pane struct {
-	*buffer
+	buffer    *buffer.Buffer
 	cursor    int
 	left      int
 	viewport  viewport.Model
@@ -100,53 +100,4 @@ func (p *pane) resize(width, height int, focused *pane) {
 	available := height - 1
 	first.resize(width, available/2, focused)
 	second.resize(width, available-available/2, focused)
-}
-
-func (m pane) lineBounds() (int, int) {
-	start := m.cursor
-	end := m.cursor
-
-	for start > 0 && m.text[start-1] != '\n' {
-		start--
-	}
-
-	for end < len(m.text) && m.text[end] != '\n' {
-		end++
-	}
-
-	return start, end
-}
-
-func (m pane) position() (int, int) {
-	row := strings.Count(string(m.text[:m.cursor]), "\n")
-	start, _ := m.lineBounds()
-
-	return row, m.cursor - start
-}
-
-func (m *pane) moveRows(distance int) {
-	_, column := m.position()
-
-	for distance != 0 {
-		start, end := m.lineBounds()
-
-		if distance < 0 {
-			if start == 0 {
-				break
-			}
-
-			m.cursor = start - 1
-			distance++
-		} else {
-			if end == len(m.text) {
-				break
-			}
-
-			m.cursor = end + 1
-			distance--
-		}
-
-		start, end = m.lineBounds()
-		m.cursor = min(start+column, end)
-	}
 }

@@ -3,10 +3,11 @@ package editor
 import (
 	"fmt"
 	"slices"
-	"strings"
 
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
+	"github.com/piodrs/sea/internal/buffer"
+	"github.com/piodrs/sea/internal/ui"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -19,23 +20,22 @@ type Model struct {
 	message      string
 	width        int
 	height       int
-	buffers      map[string]*buffer
+	buffers      map[string]*buffer.Buffer
 	opening      bool
 	pathInput    textinput.Model
+	files        []string
+	selected     int
+	killed       string
 }
 
 func New(path string) (*Model, error) {
-	path, err := filePath(path)
+	document, err := buffer.Open(path)
 
 	if err != nil {
 		return nil, err
 	}
 
-	document, err := open(path)
-
-	if err != nil {
-		return nil, err
-	}
+	path = document.Path()
 
 	root := &pane{buffer: document, viewport: viewport.New(80, 23)}
 	model := &Model{
@@ -43,12 +43,13 @@ func New(path string) (*Model, error) {
 		focused:   root,
 		width:     80,
 		height:    24,
-		buffers:   map[string]*buffer{path: document},
+		buffers:   map[string]*buffer.Buffer{path: document},
 		pathInput: textinput.New(),
 	}
 
 	model.pathInput.Prompt = "Open: "
 	model.pathInput.CharLimit = 0
+	model.pathInput.PromptStyle = ui.Accent
 	root.resize(model.width, model.height, root)
 
 	return model, nil
@@ -96,7 +97,7 @@ func (m *Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		if !prefixed {
-			m.focused.edit(message, m.root.panes())
+			m.focused.edit(message, m.root.panes(), &m.killed)
 
 			m.root.resize(m.width, m.height, m.focused)
 
@@ -112,11 +113,12 @@ func (m *Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			m.opening = true
 			m.pathInput.SetValue("")
 			m.pathInput.Width = max(1, m.width-8)
+			m.completePath()
 
 			return m, m.pathInput.Focus()
 
 		case "ctrl+s":
-			err := m.focused.buffer.save()
+			err := m.focused.buffer.Save()
 
 			if err != nil {
 				m.message = fmt.Sprintf("Save failed: %v", err)
@@ -130,8 +132,8 @@ func (m *Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			modified := false
 
 			if input == "ctrl+c" || len(panes) == 1 {
-				for _, buffer := range m.buffers {
-					modified = modified || buffer.modified
+				for _, document := range m.buffers {
+					modified = modified || document.Modified()
 				}
 			}
 
@@ -186,65 +188,4 @@ func (m *Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	return m, nil
-}
-
-func (m *Model) openFile(message tea.Msg) tea.Cmd {
-	if message, ok := message.(tea.KeyMsg); ok {
-		switch message.String() {
-		case "ctrl+g", "esc":
-			m.opening = false
-			m.pathInput.Blur()
-			m.message = "Canceled"
-
-			return nil
-
-		case "enter":
-			path := m.pathInput.Value()
-
-			if strings.TrimSpace(path) == "" {
-				return nil
-			}
-
-			path, err := filePath(path)
-
-			if err != nil {
-				m.message = fmt.Sprintf("Open failed: %v", err)
-
-				return nil
-			}
-
-			buffer := m.buffers[path]
-
-			if buffer == nil {
-				buffer, err = open(path)
-
-				if err != nil {
-					m.message = fmt.Sprintf("Open failed: %v", err)
-
-					return nil
-				}
-
-				m.buffers[path] = buffer
-			}
-
-			m.focused.buffer = buffer
-			m.focused.cursor = 0
-			m.focused.left = 0
-			m.focused.viewport = viewport.New(m.focused.width, max(1, m.focused.height-1))
-			m.opening = false
-			m.pathInput.Blur()
-			m.message = ""
-			m.root.resize(m.width, m.height, m.focused)
-
-			return nil
-		}
-
-		m.message = ""
-	}
-
-	var command tea.Cmd
-
-	m.pathInput, command = m.pathInput.Update(message)
-
-	return command
 }

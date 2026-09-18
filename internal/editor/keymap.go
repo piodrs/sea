@@ -7,16 +7,9 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-type buffer struct {
-	path     string
-	text     []rune
-	saved    string
-	modified bool
-	killed   string
-}
-
-func (m *pane) edit(message tea.KeyMsg, panes []*pane) {
-	start, end := m.lineBounds()
+func (m *pane) edit(message tea.KeyMsg, panes []*pane, killed *string) {
+	text := m.buffer.Text()
+	start, end := m.buffer.LineBounds(m.cursor)
 
 	switch message.String() {
 	case "enter", "ctrl+j":
@@ -29,7 +22,7 @@ func (m *pane) edit(message tea.KeyMsg, panes []*pane) {
 		m.cursor = max(0, m.cursor-1)
 
 	case "right", "ctrl+f":
-		m.cursor = min(len(m.text), m.cursor+1)
+		m.cursor = min(len(text), m.cursor+1)
 
 	case "home", "ctrl+a":
 		m.cursor = start
@@ -38,22 +31,22 @@ func (m *pane) edit(message tea.KeyMsg, panes []*pane) {
 		m.cursor = end
 
 	case "up", "ctrl+p":
-		m.moveRows(-1)
+		m.cursor = m.buffer.MoveRows(m.cursor, -1)
 
 	case "down", "ctrl+n":
-		m.moveRows(1)
+		m.cursor = m.buffer.MoveRows(m.cursor, 1)
 
 	case "pgup", "alt+v":
-		m.moveRows(-m.viewport.Height)
+		m.cursor = m.buffer.MoveRows(m.cursor, -m.viewport.Height)
 
 	case "pgdown", "ctrl+v":
-		m.moveRows(m.viewport.Height)
+		m.cursor = m.buffer.MoveRows(m.cursor, m.viewport.Height)
 
 	case "alt+<":
 		m.cursor = 0
 
 	case "alt+>":
-		m.cursor = len(m.text)
+		m.cursor = len(text)
 
 	case "backspace", "ctrl+h":
 		if m.cursor > 0 {
@@ -61,20 +54,20 @@ func (m *pane) edit(message tea.KeyMsg, panes []*pane) {
 		}
 
 	case "delete", "ctrl+d":
-		if m.cursor < len(m.text) {
+		if m.cursor < len(text) {
 			m.replace(m.cursor, m.cursor+1, "", panes)
 		}
 
 	case "ctrl+k":
-		if m.cursor == end && end < len(m.text) {
+		if m.cursor == end && end < len(text) {
 			end++
 		}
 
-		m.killed = string(m.text[m.cursor:end])
+		*killed = string(text[m.cursor:end])
 		m.replace(m.cursor, end, "", panes)
 
 	case "ctrl+y":
-		m.replace(m.cursor, m.cursor, m.killed, panes)
+		m.replace(m.cursor, m.cursor, *killed, panes)
 
 	default:
 		textInput := message.Type == tea.KeyRunes || message.Type == tea.KeySpace
@@ -98,11 +91,7 @@ func (m *pane) edit(message tea.KeyMsg, panes []*pane) {
 }
 
 func (m *pane) replace(start, end int, text string, panes []*pane) {
-	runes := []rune(text)
-	tail := append([]rune{}, m.text[end:]...)
-	m.text = append(m.text[:start], runes...)
-	m.text = append(m.text, tail...)
-	m.modified = string(m.text) != m.saved
+	inserted := m.buffer.Replace(start, end, text)
 
 	for _, pane := range panes {
 		if pane.buffer != m.buffer {
@@ -110,9 +99,9 @@ func (m *pane) replace(start, end int, text string, panes []*pane) {
 		}
 
 		if pane == m || pane.cursor > start && pane.cursor <= end {
-			pane.cursor = start + len(runes)
+			pane.cursor = start + inserted
 		} else if pane.cursor > end {
-			pane.cursor += len(runes) - (end - start)
+			pane.cursor += inserted - (end - start)
 		}
 	}
 }
