@@ -1,61 +1,118 @@
 package editor
 
-import "strings"
+import (
+	"strings"
+	"unicode"
 
-func (m *Model) insert(text string) {
-	runes := []rune(text)
-	tail := append([]rune{}, m.buffer[m.cursor:]...)
+	tea "github.com/charmbracelet/bubbletea"
+)
 
-	m.buffer = append(m.buffer[:m.cursor], runes...)
-	m.buffer = append(m.buffer, tail...)
-	m.cursor += len(runes)
+type buffer struct {
+	path     string
+	text     []rune
+	saved    string
+	modified bool
+	killed   string
 }
 
-func (m Model) lineBounds() (int, int) {
-	start := m.cursor
-	end := m.cursor
+func (m *pane) edit(message tea.KeyMsg, panes []*pane) {
+	start, end := m.lineBounds()
 
-	for start > 0 && m.buffer[start-1] != '\n' {
-		start--
-	}
+	switch message.String() {
+	case "enter", "ctrl+j":
+		m.replace(m.cursor, m.cursor, "\n", panes)
 
-	for end < len(m.buffer) && m.buffer[end] != '\n' {
-		end++
-	}
+	case "tab":
+		m.replace(m.cursor, m.cursor, "\t", panes)
 
-	return start, end
-}
+	case "left", "ctrl+b":
+		m.cursor = max(0, m.cursor-1)
 
-func (m Model) position() (int, int) {
-	row := strings.Count(string(m.buffer[:m.cursor]), "\n")
-	start, _ := m.lineBounds()
+	case "right", "ctrl+f":
+		m.cursor = min(len(m.text), m.cursor+1)
 
-	return row, m.cursor - start
-}
+	case "home", "ctrl+a":
+		m.cursor = start
 
-func (m *Model) moveRows(distance int) {
-	_, column := m.position()
+	case "end", "ctrl+e":
+		m.cursor = end
 
-	for distance != 0 {
-		start, end := m.lineBounds()
+	case "up", "ctrl+p":
+		m.moveRows(-1)
 
-		if distance < 0 {
-			if start == 0 {
-				break
-			}
+	case "down", "ctrl+n":
+		m.moveRows(1)
 
-			m.cursor = start - 1
-			distance++
-		} else {
-			if end == len(m.buffer) {
-				break
-			}
+	case "pgup", "alt+v":
+		m.moveRows(-m.viewport.Height)
 
-			m.cursor = end + 1
-			distance--
+	case "pgdown", "ctrl+v":
+		m.moveRows(m.viewport.Height)
+
+	case "alt+<":
+		m.cursor = 0
+
+	case "alt+>":
+		m.cursor = len(m.text)
+
+	case "backspace", "ctrl+h":
+		if m.cursor > 0 {
+			m.replace(m.cursor-1, m.cursor, "", panes)
 		}
 
-		start, end = m.lineBounds()
-		m.cursor = min(start+column, end)
+	case "delete", "ctrl+d":
+		if m.cursor < len(m.text) {
+			m.replace(m.cursor, m.cursor+1, "", panes)
+		}
+
+	case "ctrl+k":
+		if m.cursor == end && end < len(m.text) {
+			end++
+		}
+
+		m.killed = string(m.text[m.cursor:end])
+		m.replace(m.cursor, end, "", panes)
+
+	case "ctrl+y":
+		m.replace(m.cursor, m.cursor, m.killed, panes)
+
+	default:
+		textInput := message.Type == tea.KeyRunes || message.Type == tea.KeySpace
+
+		if !textInput || message.Alt {
+			return
+		}
+
+		text := strings.Map(func(character rune) rune {
+			allowed := character == '\n' || character == '\t'
+
+			if unicode.IsControl(character) && !allowed {
+				return -1
+			}
+
+			return character
+		}, string(message.Runes))
+
+		m.replace(m.cursor, m.cursor, text, panes)
+	}
+}
+
+func (m *pane) replace(start, end int, text string, panes []*pane) {
+	runes := []rune(text)
+	tail := append([]rune{}, m.text[end:]...)
+	m.text = append(m.text[:start], runes...)
+	m.text = append(m.text, tail...)
+	m.modified = string(m.text) != m.saved
+
+	for _, pane := range panes {
+		if pane.buffer != m.buffer {
+			continue
+		}
+
+		if pane == m || pane.cursor > start && pane.cursor <= end {
+			pane.cursor = start + len(runes)
+		} else if pane.cursor > end {
+			pane.cursor += len(runes) - (end - start)
+		}
 	}
 }

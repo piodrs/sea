@@ -26,6 +26,17 @@ A experimental small terminal text editor written in Go
 
 | Key | Action |
 | --- | --- |
+| `Ctrl+X Ctrl+F` | Open a file in the focused pane |
 | `Ctrl+X Ctrl+S` | Save |
 | `Ctrl+X Ctrl+C` | Quit (repeat the sequence to discard unsaved changes) |
 | `Ctrl+G` / `Escape` | Cancel a pending command |
+
+### Panes
+
+| Key | Action |
+| --- | --- |
+| `Ctrl+X 2` | Split horizontally, into upper and lower panes |
+| `Ctrl+X 3` | Split vertically, into left and right panes |
+| `Ctrl+X 1` | Keep only the focused pane |
+| `Ctrl+X O` | Focus the next pane |
+| `Ctrl+X 0` | Close the focused pane |
